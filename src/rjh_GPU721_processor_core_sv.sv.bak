@@ -1,0 +1,79 @@
+// synopsys translate_off
+`timescale 1 ps / 1 ps
+// synopsys translate_on
+
+module rjh_GPU721_processor_core (
+input             Resetn_pin    , // Reset
+input             Clock_pin     , // Clock
+// eight IW buses for a maxumim of 8 thread blocks at once
+input 	  [15:0] thread_block_iw0_i  , // IW bus for thread 0
+input 	  [15:0] thread_block_iw1_i  , // IW bus for thread 1
+input 	  [15:0] thread_block_iw2_i  , // IW bus for thread 2
+input 	  [15:0] thread_block_iw3_i  , // IW bus for thread 3
+input 	  [15:0] thread_block_iw4_i  , // IW bus for thread 4
+input 	  [15:0] thread_block_iw5_i  , // IW bus for thread 5
+input 	  [15:0] thread_block_iw6_i  , // IW bus for thread 6
+input 	  [15:0] thread_block_iw7_i  , // IW bus for thread 7
+
+// eight buses for a maximum of 8 thread block IDs
+input 	  [8:0]  thread_block_idx0_i  , // IW bus for thread 0
+input 	  [8:0]  thread_block_idx1_i  , // IW bus for thread 1
+input 	  [8:0]  thread_block_idx2_i  , // IW bus for thread 2
+input 	  [8:0]  thread_block_idx3_i  , // IW bus for thread 3
+input 	  [8:0]  thread_block_idx4_i  , // IW bus for thread 4
+input 	  [8:0]  thread_block_idx5_i  , // IW bus for thread 5
+input 	  [8:0]  thread_block_idx6_i  , // IW bus for thread 6
+input 	  [8:0]  thread_block_idx7_i  , // IW bus for thread 7
+
+// eight flags for individual thread availability: 0->free, 1->unavailable
+output reg			thread_status0_o	  , // flag for thread availability 0
+output reg			thread_status1_o	  , // flag for thread availability 1
+output reg			thread_status2_o	  , // flag for thread availability 2
+output reg			thread_status3_o	  , // flag for thread availability 3
+output reg			thread_status4_o	  , // flag for thread availability 4
+output reg			thread_status5_o	  , // flag for thread availability 5
+output reg			thread_status6_o	  , // flag for thread availability 6
+output reg			thread_status7_o	    // flag for thread availability 7
+
+);
+
+
+//instructions
+	
+
+	//arithmetic manipulation
+localparam [3:0] ADD_IC = 4'b0001 ; // add
+localparam [3:0] SUB_IC = 4'b0010 ; // sub
+localparam [3:0] MUL_IC = 4'b0011 ; // mul
+localparam [3:0] DIV_IC = 4'b0100 ; // div
+	//logic manipulation
+localparam [3:0] AND_IC = 4'b0101 ; // and
+localparam [3:0] OR_IC  = 4'b0110 ; // or
+localparam [3:0] XOR_IC = 4'b0111 ; // xor
+	//shift
+localparam [3:0] SLL_IC = 4'b1000 ; // shift left logic
+localparam [3:0] SRL_IC = 4'b1001 ; // shift right logic
+	//data transfer
+localparam [3:0] LD_IC  = 4'b1010 ; // load
+localparam [3:0] ST_IC  = 4'b1011 ; // store
+	//flow control
+localparam [3:0] BR_IC  = 4'b1100 ; // branch
+localparam [3:0] BAR_IC = 4'b1101 ; // barrier synchronization
+localparam [3:0] EXT_IC = 4'b1110 ; // exit thread
+
+//branch conditions
+localparam [1:0] BR_U  = 2'b00 ; // unconditional branch
+localparam [1:0] BR_EQ = 2'b01 ; // branch if equal
+localparam [1:0] BR_GT = 2'b10 ; // branch if greater than
+localparam [1:0] BR_LT = 2'b11 ; // branch if less than
+
+
+//----------------------------------------------------------------------------
+//-- Declare internal signals
+//----------------------------------------------------------------------------
+reg  [15:0] thread_IW [7:0] ; // IW buffer registers for up to 8 thread blocks
+
+
+
+
+endmodule 

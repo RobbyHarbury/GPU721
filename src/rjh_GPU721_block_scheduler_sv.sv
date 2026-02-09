@@ -4,7 +4,8 @@ input             Clock_pin     			 , // Clock
 input					thread_block_request_i ,
 input		  [11:0] thread_block_address_i ,
 input		  [15:0] PM_out_i	[7:0] ,
-input      [15:0] PM_pc_i	[7:0] ,
+input      	  [15:0] PM_pc_i	[7:0] ,
+input      	  [3:0] PM_branch_depth_i	[7:0] ,
 input					PM_ready_i [7:0] ,
 input					thread_status_i [7:0] ,
 input					thread_block_status_i [7:0] ,
@@ -18,9 +19,11 @@ output reg [8:0]  thread_block_idx_o    [7:0] , // id buses for up to 8 thread b
 output reg [2:0]  thread_block_width_o	 [7:0] , // thread width buses for up to 8 thread blocks
 output reg	  		thread_block_status_o [7:0] , // thread operation status bus for up to 8 thread blocks
 output reg [15:0]	thread_pc_o				 [7:0] , // PC for each thread block
+output reg [3:0]		branch_depth_o		[7:0],		
 output reg			PM_freeze_o				 [7:0] ,
 output reg 			block_waiting_o		 [7:0] ,
-output reg			GPU_busy_o							 						
+output reg			GPU_busy_o					
+		 						
 );
 
 //----------------------------------------------------------------------------
@@ -73,8 +76,10 @@ if (Resetn_pin == 0) begin
 	thread_block_status_o = '{1'd0, 1'd0, 1'd0, 1'd0, 1'd0, 1'd0, 1'd0, 1'd0};
 	thread_pc_o = '{16'd0, 16'd0, 16'd0, 16'd0, 16'd0, 16'd0, 16'd0, 16'd0};
 	PM_freeze_o = '{1'd0, 1'd0, 1'd0, 1'd0, 1'd0, 1'd0, 1'd0, 1'd0};
+	branch_depth_o = '{4'd0, 4'd0, 4'd0, 4'd0, 4'd0, 4'd0, 4'd0, 4'd0};
 	block_waiting_o = '{1'd0, 1'd0, 1'd0, 1'd0, 1'd0, 1'd0, 1'd0, 1'd0};
 	GPU_busy_o = 1'b0;
+	
 	
 end
 else begin //normal execution
@@ -129,6 +134,7 @@ else begin //normal execution
 				thread_block_idx_o[i] = PM_out_i[PM_index][11:3];
 				thread_block_width_o[i] = PM_out_i[PM_index][2:0];
 				thread_pc_o[i] = PM_pc_i[PM_index];
+				branch_depth_o[i] = PM_branch_depth_i[PM_index];
 				thread_block_status_o[i] = 1'b1;
 				state_reg[i] = RUNNING_0;
 			end //PROCESSING_1
@@ -140,6 +146,7 @@ else begin //normal execution
 						PM_freeze_o[i] = 1'b0;
 						thread_block_iw_o[i] = PM_out_i[PM_index];
 						thread_pc_o[i] = PM_pc_i[PM_index];
+						branch_depth_o[i] = PM_branch_depth_i[PM_index];
 						thread_block_status_o[i] = 1'b1;
 						
 					end
@@ -158,6 +165,7 @@ else begin //normal execution
 							PM_freeze_o[i] = 1'b0;
 							thread_block_iw_o[i] = PM_out_i[PM_index];
 							thread_pc_o[i] = PM_pc_i[PM_index];
+							branch_depth_o[i] = PM_branch_depth_i[PM_index];
 							state_reg[i] = RUNNING_1;
 						end
 						else begin

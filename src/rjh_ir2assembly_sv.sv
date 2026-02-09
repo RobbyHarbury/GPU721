@@ -14,7 +14,7 @@ output reg [119:0] ICis
 reg [7:0] IR9to5  ;
 reg [7:0] IR4to0   ;
 reg [31:0] SIMD_status;
-reg [3:0] br_val ;
+reg [7:0] br_val ;
 
 
 always @ (*) begin
@@ -50,7 +50,7 @@ always @ (*) begin
 		  4'b1001 : ICis = {"SRL R", IR9to5, ", #", IR4to0, SIMD_status, ";"}; //SRL
 		  4'b1010 : ICis = {"LD ", IR4to0, ", MA", IR9to5, ";"}; //LD
         4'b1011 : ICis = {"ST ", IR4to0, ", MA", IR9to5, ";"}; //ST
-		  4'b1100 : ICis = {"BR ", IR9to5, br_val, IR4to0, ";"}; //BR
+		  4'b1100 : ICis = {"BR R", IR9to5, br_val, "R", IR4to0, ";"}; //BR
 		  4'b1101 : ICis = {"SYNC;"}; //sync
 		  4'b1110 : ICis = {"EXIT;"}; //exit
 		  4'b1111 : ICis = {"STALL;"}; //STALL

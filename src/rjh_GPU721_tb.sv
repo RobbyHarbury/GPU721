@@ -216,6 +216,9 @@ initial begin
 	 thread_block_address_tb = 12'd96;
 	 thread_block_request_tb = 1'b1;
 	 @(posedge Clock_tb);
+	 thread_block_address_tb = 12'd128;
+	 thread_block_request_tb = 1'b1;
+	 @(posedge Clock_tb);
 	 thread_block_request_tb = 1'b0;
 	 repeat (300) @(posedge Clock_tb);
 

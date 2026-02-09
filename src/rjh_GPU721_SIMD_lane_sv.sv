@@ -7,6 +7,7 @@ input		  [2:0]  	thread_idx_i		, // thread block idx
 input		  [15:0]		MM_out_i				, // memory data output
 input						lane_freeze_i		, // lane is frozen waiting for memory\
 input		  [15:0]		PC_i					, // PC for incoming instruction
+input		  [3:0]	branch_depth_i			,
 
 output reg				mem_access_o		, // flag that signals that the lane is doing a data memory access
 
@@ -14,7 +15,8 @@ output reg				lane_done_o			, // lane has reached exit instruction
 output reg				WR_o					, // memory write enable
 output reg				mem_type_o			, // type of memory to access:0-> local, 1-> GPU cache
 output reg [15:0]		MA_o					, // memory address
-output reg [15:0]		MM_in_o				  // memory data input
+output reg [15:0]		MM_in_o				, // memory data input
+output reg 				predicate_o			  // Predicate register for branch conditional evaluation
 
 );
 
@@ -52,7 +54,7 @@ localparam [1:0] BR_LT = 2'b11 ; // branch if less than
 //-- Declare internal signals
 //----------------------------------------------------------------------------
 reg  [15:0]    R       [31:0] ; // Register File (RF) 32 16-bit registers
-reg				predicate		; // Predicate register for branch conditional evaluation
+reg  [3:0]	   branch_depth	  ; // the depth of the branch that this thread is on
 reg  [15:0]    IR3            ; // Instruction Register 3
 reg  [15:0]    IR2            ; // Instruction Register 2
 reg  [15:0]    IR1            ; // Instruction Register 1
@@ -160,17 +162,25 @@ if (Resetn_pin == 0) begin
 	stall_mc1   = 1'd0;
 	stall_mc2   = 1'd0;
 	stall_mc3   = 1'd0;
-	predicate	= 1'd0;
-	lane_done_o = 1'd0;
+	branch_depth = 4'd0;
+	lane_done_o = 1'd1; // initialized to 1 to signal that lane is free
 	WR_o			= 1'd0;
 	mem_type_o  = 1'd0;
 	MA_o			= 16'd0;
 	MM_in_o		= 16'd0;
 	mem_access_o = 1'd0;
+	predicate_o	= 1'd1;
 	
+
 end // if (Resetn_pin == 0)
 else begin // Normal Operation
 if (lane_freeze_i == 0) begin
+	if(predicate_o == 0) begin
+		if (branch_depth_i == branch_depth) begin
+			predicate_o = 1'b1;
+		end
+	end
+	if (predicate_o == 1'b1) begin
 
 //----------------------------------------------------------------------------
 // MACHINE CYCLE 3
@@ -198,7 +208,7 @@ if (lane_freeze_i == 0) begin
                 R[Ri3] = TALUH;
             end // ADD_IC, SUB_IC, AND_IC, OR_IC, XOR_IC, SLL_IC, SRL_IC
 				EXT_IC: begin
-					lane_done_o = 0;// reached exit, lane is done with thread block
+					lane_done_o = 1;// reached exit, lane is done with thread block
 				end // EXT_IC
             default: begin // Default case should not be reached0
                 `ifdef SIMULATION
@@ -214,7 +224,16 @@ if (lane_freeze_i == 0) begin
     if ((stall_mc2 == 0) && (IR2 != 16'hffff)) begin
         case (IR2[15:12]) // Decode the OpCode of the IW
             BR_IC: begin
-
+				case (IR1[11:10])
+				BR_U : begin predicate_o = 1'b1; end
+				BR_EQ: begin if (R[Ri1] == R[Rj1]) begin predicate_o = 1'b1; branch_depth = branch_depth_i; end // branch
+								else begin predicate_o = 1'b0; branch_depth = branch_depth_i - 1; end end	// don't branch
+				BR_GT: begin if (R[Ri1] > R[Rj1]) begin predicate_o = 1'b1; branch_depth = branch_depth_i; end // branch
+								else begin predicate_o = 1'b0; branch_depth = branch_depth_i - 1; end end	// don't branch
+				BR_LT: begin if (R[Ri1] < R[Rj1]) begin predicate_o = 1'b1; branch_depth = branch_depth_i; end // branch
+								else begin predicate_o = 1'b0; branch_depth = branch_depth_i - 1; end end	// don't branch
+				default: predicate_o = 1'b1;
+				endcase
             end // BR_IC
 				LD_IC: begin
 					mem_access_o = 1'b1;
@@ -341,22 +360,15 @@ if (lane_freeze_i == 0) begin
 //----------------------------------------------------------------------------
 // MACHINE CYCLE 1
 //----------------------------------------------------------------------------
-    if ((stall_mc1 == 0) && (IR1 != 16'hffff)) begin // MC1, or Operand Fetch for manip inst, or Address_Fetch for transfer and flow control inst
+    if ((stall_mc1 == 0) && (IR1 != 16'hffff)) begin // MC1, or Operand Fetch for manip inst, or Address_Fetch for transfer and flow control inst\
+
         case (IR1[15:12]) // Decode the OpCode of the IW
-		  		BR_IC: begin
-					MAB = IW_i[15:0]; // Load MAB with base address constant value embedded in IW-field; the value 0 emulates the Register Direct AM
-					case (IR1[11:10])
-                   BR_U : begin predicate = 1'b1; end
-                   BR_EQ: begin if (R[Ri1] == R[Rj1]) predicate = 1'b1; end
-						 BR_GT: begin if (R[Ri1] > R[Rj1]) predicate = 1'b1; end
-						 BR_LT: begin if (R[Ri1] < R[Rj1]) predicate = 1'b1; end
-                   default: predicate = 1'b0;
-               endcase
-					lane_done_o = 0;
+			BR_IC: begin
+				lane_done_o = 0;
 				
             end // BR_IC
-				LD_IC: begin
-					 MAB = IW_i[15:0]; // Load MAB with base address constant value embedded in IW-field; the value 0 emulates the Register Direct AM
+			LD_IC: begin
+				MAB = IW_i[15:0]; // Load MAB with base address constant value embedded in IW-field; the value 0 emulates the Register Direct AM
                 if (Ri1 == 0) begin
                     MAX = 0; 
                 end
@@ -379,8 +391,8 @@ if (lane_freeze_i == 0) begin
 					 mem_access_o = 1'b1;
 					 lane_done_o = 0;
             end // LD_IC
-				ST_IC: begin
-					 MAB = IW_i[15:0]; // Load MAB with base address constant value embedded in IW-field; the value 0 emulates the Register Direct AM
+			ST_IC: begin
+				MAB = IW_i[15:0]; // Load MAB with base address constant value embedded in IW-field; the value 0 emulates the Register Direct AM
                 if (Ri1 == 0) begin
                     MAX = 0; 
                 end
@@ -456,7 +468,7 @@ if (lane_freeze_i == 0) begin
 					lane_done_o = 0;
             end // SWAP_IC, ADD_IC, SUB_IC, AND_IC, OR_IC
 				EXT_IC: begin
-					lane_done_o = 1;// reached exit, lane is done with thread block
+					lane_done_o = 0;// reached exit, lane is done with thread block
 				end // EXT_IC
             default: begin // Default case should not be reached
                 `ifdef SIMULATION
@@ -479,17 +491,23 @@ if (lane_freeze_i == 0) begin
     Rj3 = Rj2;
 
     // Instruction in MC1 can move to MC2; Rj2 may need to be = Ri1 for certain instruction sequences
-    IR2 = IR1;
-    Ri2 = Ri1;
-    Rj2 = Rj1;
+	if((stall_mc1 == 0) && (IR2[15:12] != BR_IC)) begin
+		IR2 = IR1;
+		Ri2 = Ri1;
+		Rj2 = Rj1;
+		stall_mc2 = 0; 
+	end
+	else begin
+		IR2 = 16'hffff; 
+		stall_mc1 = 1; 
+	end
+	
 	 
-	 R[30] = {7'd0, thread_block_idx_i};
-	 R[31] = {13'd0, thread_idx_i};
 
 
 
     // Instruction in MC0 can move to MC1;     
-    if ((stall_mc0 == 0) && (IR1[15:12] != LD_IC) && (IR1[15:12] != ST_IC)) begin
+    if ((stall_mc0 == 0) && (IR1[15:12] != LD_IC) && (IR1[15:12] != ST_IC) && (IR1[15:12] != BR_IC)) begin
         // Below: IW0 is fetched directly into IR1, Ri1, and Rj1
         IR1 = IW_i; 
         Ri1 = IW_i[9:5];
@@ -504,9 +522,12 @@ if (lane_freeze_i == 0) begin
     // After the JMP_IC instruction reaches MC3 OR (LD_IC or ST_C) reach MC1,
     // start refilling the pipe by removing the stalls. For JMP_IC the stalls are 
     // removed in this order: stall_mc0 --> stall_mc1 --> stall_mc2
-    if ((IR3 == 16'hffff) || (IR2[15:12] == LD_IC) || (IR2[15:12] == ST_IC)) begin
+    if ((IR3 == 16'hffff) || (IR3[15:12] == BR_IC) || (IR2[15:12] == LD_IC) || (IR2[15:12] == ST_IC) || (IR2[15:12] == BR_IC)) begin
         stall_mc0 = 0; 
     end
+	R[30] = {7'd0, thread_block_idx_i};
+	R[31] = {13'd0, thread_idx_i};
+end
 end
 end//normal operation
 end //my_SIMD_lane

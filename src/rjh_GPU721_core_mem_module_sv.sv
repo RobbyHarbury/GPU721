@@ -15,6 +15,7 @@ output reg	[15:0] mm_out_o [7:0]			, // data memory out
 output reg			 lane_freeze_o [7:0]		, // freeze bits for each lane. Lanes will freeze until all memory access from their thread block are finished
 output		[15:0] cache_in_o	[7:0]			, // data memory in for the GPU cache
 output reg	[12:0] cache_address_o			, // GPU cache memory address
+output reg		   cache_access_req_o			, // access request for the cache
 output reg			 cache_wr_o					, // write enable for the cache
 output reg			 block_freeze_o [7:0]	
 
@@ -67,10 +68,10 @@ local_ram local_ram (
 generate 
 	
 	for (j=0; j<8; j=j+1) begin : lane_freeze_logic // lane_freeze == 0 if that lane and all lanes with the same lane block idx are done. else lane is frozen
-		assign lane_freeze_o[j] = (((lane_block_idx_i[j] == lane_block_idx_i[0]) & lane_done[0]) | ((lane_block_idx_i[j] == lane_block_idx_i[1]) & lane_done[1]) |
-											((lane_block_idx_i[j] == lane_block_idx_i[2]) & lane_done[2]) | ((lane_block_idx_i[j] == lane_block_idx_i[3]) & lane_done[3]) |
-											((lane_block_idx_i[j] == lane_block_idx_i[4]) & lane_done[4]) | ((lane_block_idx_i[j] == lane_block_idx_i[5]) & lane_done[5]) |
-											((lane_block_idx_i[j] == lane_block_idx_i[6]) & lane_done[6]) | ((lane_block_idx_i[j] == lane_block_idx_i[7]) & lane_done[7]));
+		assign lane_freeze_o[j] = (((lane_block_idx_i[j] == lane_block_idx_i[0]) & lane_done[0] & mem_access_i[0]) | ((lane_block_idx_i[j] == lane_block_idx_i[1]) & lane_done[1] & mem_access_i[1]) |
+											((lane_block_idx_i[j] == lane_block_idx_i[2]) & lane_done[2] & mem_access_i[2]) | ((lane_block_idx_i[j] == lane_block_idx_i[3]) & lane_done[3] & mem_access_i[3]) |
+											((lane_block_idx_i[j] == lane_block_idx_i[4]) & lane_done[4] & mem_access_i[4]) | ((lane_block_idx_i[j] == lane_block_idx_i[5]) & lane_done[5] & mem_access_i[5]) |
+											((lane_block_idx_i[j] == lane_block_idx_i[6]) & lane_done[6] & mem_access_i[6]) | ((lane_block_idx_i[j] == lane_block_idx_i[7]) & lane_done[7] & mem_access_i[7]));
 											
 		assign block_freeze_o[j] = (((thread_block_idx_i[j] == lane_block_idx_i[0]) & lane_freeze_o[0]) | ((thread_block_idx_i[j] == lane_block_idx_i[1]) & lane_freeze_o[1]) |
 											 ((thread_block_idx_i[j] == lane_block_idx_i[2]) & lane_freeze_o[2]) | ((thread_block_idx_i[j] == lane_block_idx_i[3]) & lane_freeze_o[3]) |
@@ -104,11 +105,12 @@ if (Resetn_pin == 0) begin
 	mm_out_o[7:0] = '{16'd0, 16'd0, 16'd0, 16'd0, 16'd0, 16'd0, 16'd0, 16'd0};
 	cache_address_o = 13'd0;
 	cache_wr_o = 1'd0;
+	cache_access_req_o = 1'd0;
 	
 end
 else begin //normal execution
 for (i=0; i<8; i=i+1) begin
-	lane_done[i] |= mem_access_i[i];
+	lane_done[i] = 1'b1;
 	for (k=0; k<8; k=k+1) begin
 		if (lane_block_idx_i[i] == thread_block_idx_i[k]) begin
 			local_mem_offset[i] = local_partition_size[5:0] * k[5:0];
@@ -119,6 +121,7 @@ if(cache_done_i) begin
 // MC 1
 	local_mem_wr = 1'b0; // clear write enables
 	cache_wr_o = 1'b0;
+	cache_access_req_o = 1'b0;
 	if (current_access_type == 1'b1) begin
 		mem_line[7:0] = cache_out_i[7:0];
 	end
@@ -128,11 +131,12 @@ if(cache_done_i) begin
 	//current_address = mem_address;
 	for (i=0; i<8; i=i+1) begin
 		mem_line_index = MA_i[i][2:0];
-		if ((lane_done[i] == 1'b1) && (MA_i[i][15:3] == mem_address) && (mem_type_i[i] == current_access_type)) begin
+		if ((lane_done[i] == 1'b1) && (mem_access_i[i] == 1'b1) && (MA_i[i][15:3] == mem_address) && (mem_type_i[i] == current_access_type)) begin
 			if (WR_i[i] == 1'b1) begin // Write state
 				mem_line[mem_line_index] = MM_in_i[i];
 				if (current_access_type == 1'b1) begin
 					cache_wr_o = 1'b1;
+					cache_access_req_o = 1'b1;
 				end
 				else begin
 					local_mem_wr = 1'b1;
@@ -149,16 +153,17 @@ if(cache_done_i) begin
 	if ((local_mem_wr != 1'b1) && (cache_wr_o != 1'b1)) begin // if storing a line then do nothing
 		// find new memory access to complete
 		for (i=0; i<8; i=i+1) begin
-			if (lane_done[i] == 1'b1) begin
+			if ((lane_done[i] == 1'b1) && (mem_access_i[i] == 1'b1)) begin
 				mem_address = MA_i[i][15:3];
-				
+				current_access_type = mem_type_i[i];
 				if (current_access_type == 1'b1) begin
 					cache_address_o = mem_address;
+					cache_access_req_o = 1'b1;
 				end
 				else begin
 					local_mem_address = mem_address[2:0] + local_mem_offset[i];
 				end
-				current_access_type = mem_type_i[i];
+				
 				break;
 			end
 		end

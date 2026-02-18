@@ -38,6 +38,8 @@ output	  [15:0]	cache_in_o				 [7:0] ,
 
 output	  [12:0] cache_address_o				 ,
 
+output			   cache_access_req_o			,
+
 output				cache_wr_o						 ,
 
 output				block_freeze_o			 [7:0] ,
@@ -143,6 +145,7 @@ rjh_GPU721_core_mem_module_sv mem_module(
 .lane_freeze_o				(lane_freeze_mm), 
 .cache_in_o					(cache_in_o),
 .cache_address_o			(cache_address_o), 
+.cache_access_req_o			(cache_access_req_o),
 .cache_wr_o					(cache_wr_o),  
 .block_freeze_o			(block_freeze_o)
 );

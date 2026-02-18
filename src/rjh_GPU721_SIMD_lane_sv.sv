@@ -55,27 +55,20 @@ localparam [1:0] BR_LT = 2'b11 ; // branch if less than
 //----------------------------------------------------------------------------
 reg  [15:0]    R       [31:0] ; // Register File (RF) 32 16-bit registers
 reg  [3:0]	   branch_depth	  ; // the depth of the branch that this thread is on
-reg  [15:0]    IR3            ; // Instruction Register 3
 reg  [15:0]    IR2            ; // Instruction Register 2
 reg  [15:0]    IR1            ; // Instruction Register 1
 reg            stall_mc0      ; // Stall Control Bits
 reg            stall_mc1      ; // Stall Control Bits
 reg            stall_mc2      ; // Stall Control Bits
-reg            stall_mc3      ; // Stall Control Bits
 reg  [15:0]    MAB            ; // Memory Address B
 reg  [15:0]    MAX            ; // Memory Address X
 reg  [15:0]    MAeff          ; // Memory Address Effective
 reg  [15:0]    TA             ; // Temporary Input of Arithmetic-Logic-Unit "A"
 reg  [15:0]    TB             ; // Temporary Input of Arithmetic-Logic-Unit "B"
-reg  [16:0]    TALUout        ; // Temoprary Output of Arithmetic-Logic-Unit with carry
-reg  [15:0]    TALUH          ; // Temporary Output of Arithmetic-Logic-Unit "High"
-reg  [15:0]    TALUL          ; // Temporary Output of Arithmetic-Logic-Unit "Low"
 reg  [4:0]    Ri1             ; // Index within registerfile
 reg  [4:0]    Rj1             ; // Index within registerfile
 reg  [4:0]    Ri2             ; // Index within registerfile
 reg  [4:0]    Rj2             ; // Index within registerfile
-reg  [4:0]    Ri3             ; // Index within registerfile
-reg  [4:0]    Rj3             ; // Index within registerfile
 wire [15:0]   MUL_SIMD_out_0	; // Mul output from SIMD multiplier 0
 wire [15:0]   MUL_SIMD_out_1	; // Mul output from SIMD multiplier 1
 wire [31:0]		MUL_out			; // Output from multiplier
@@ -146,22 +139,15 @@ if (Resetn_pin == 0) begin
    MAeff       = 16'd0;
    TA          = 16'd0;
    TB          = 16'd0;
-   TALUH       = 16'd0;
-   TALUL       = 16'd0;
-	TALUout     = 17'd0;
    IR1         = 16'hffff; // All IRs are initialized to the "don't care OpCode value 0xffff
    IR2         = 16'hffff;
-   IR3         = 16'hffff;
 	Ri1         = 5'd0;
    Rj1         = 5'd0;
    Ri2         = 5'd0;
    Rj2         = 5'd0;
-   Ri3         = 5'd0;
-	Rj3         = 5'd0;
 	stall_mc0   = 1'd0;
 	stall_mc1   = 1'd0;
 	stall_mc2   = 1'd0;
-	stall_mc3   = 1'd0;
 	branch_depth = 4'd0;
 	lane_done_o = 1'd1; // initialized to 1 to signal that lane is free
 	WR_o			= 1'd0;
@@ -182,171 +168,117 @@ if (lane_freeze_i == 0) begin
 	end
 	if (predicate_o == 1'b1) begin
 
-//----------------------------------------------------------------------------
-// MACHINE CYCLE 3
-//----------------------------------------------------------------------------
-    // MC3 is executed first because its assignments might be needed by the instructions executing MC2 or MC1 to resolve data or control D/H.
-    // An instruction that has arrived in MC3 does not have any dependency.
-    if ((stall_mc3 == 0) && (IR3 != 16'hffff)) begin 
-        case (IR3[15:12]) // Decode the OpCode of the IW
-            LD_IC: begin
-               R[Rj3] = MM_out_i;
-					mem_access_o = 1'b0;
-            end // LD_IC
-            ST_IC: begin 
-					WR_o = 1'b0;
-					mem_access_o = 1'b0;
-				end // ST_IC
-            BR_IC: begin
-
-            end // BR_IC
-				MUL_IC, DIV_IC: begin
-				R[Ri3] = TALUH;
-				R[Rj3] = TALUL;
-				end // MUL_IC, DIV_IC
-            ADD_IC, SUB_IC, AND_IC, OR_IC, XOR_IC, SLL_IC, SRL_IC: begin
-                R[Ri3] = TALUH;
-            end // ADD_IC, SUB_IC, AND_IC, OR_IC, XOR_IC, SLL_IC, SRL_IC
-				EXT_IC: begin
-					lane_done_o = 1;// reached exit, lane is done with thread block
-				end // EXT_IC
-            default: begin // Default case should not be reached0
-                `ifdef SIMULATION
-                $display("ERROR: Default Case Selection Reached from MC3 , OPCODE: %b @ %t",IR3[15:12], $time());
-                `endif
-            end // default
-        endcase // IR3[15:12]
-    end // stall_mc3
 
 //----------------------------------------------------------------------------
 // MACHINE CYCLE 2
 //----------------------------------------------------------------------------
+    // MC2 is executed first because its assignments might be needed by the instructions executing MC1 to resolve data or control D/H.
+    // An instruction that has arrived in MC3 does not have any dependency.
     if ((stall_mc2 == 0) && (IR2 != 16'hffff)) begin
         case (IR2[15:12]) // Decode the OpCode of the IW
             BR_IC: begin
-				case (IR1[11:10])
-				BR_U : begin predicate_o = 1'b1; end
-				BR_EQ: begin if (R[Ri1] == R[Rj1]) begin predicate_o = 1'b1; branch_depth = branch_depth_i; end // branch
-								else begin predicate_o = 1'b0; branch_depth = branch_depth_i - 1; end end	// don't branch
-				BR_GT: begin if (R[Ri1] > R[Rj1]) begin predicate_o = 1'b1; branch_depth = branch_depth_i; end // branch
-								else begin predicate_o = 1'b0; branch_depth = branch_depth_i - 1; end end	// don't branch
-				BR_LT: begin if (R[Ri1] < R[Rj1]) begin predicate_o = 1'b1; branch_depth = branch_depth_i; end // branch
-								else begin predicate_o = 1'b0; branch_depth = branch_depth_i - 1; end end	// don't branch
-				default: predicate_o = 1'b1;
-				endcase
+
             end // BR_IC
-				LD_IC: begin
-					mem_access_o = 1'b1;
-				end
+			LD_IC: begin
+				R[Rj2] = MM_out_i;
+				mem_access_o = 1'b0;
+			end
             ST_IC: begin
-					mem_access_o = 1'b1;
+				WR_o = 1'b0;
+				mem_access_o = 1'b0;
             end // ST_IC
 				
             //----------------------------------------------------------------------------
-            // For all assignments that target TALUH we use TALUout.  This is 17-bits wide
+            // For all assignments we use TALUout.  This is 17-bits wide
             //     to account for the value of the carry when necessary.
             //----------------------------------------------------------------------------
             ADD_IC: begin
 					 if (IR2[10] == 0) begin //non SIMD
-						TALUout = TA + TB;
-						TALUH = TALUout[15:0];
+						R[Ri2] = TA + TB;
 					 end
                 else begin // SIMD version
-						TALUout[8:0] = TA[7:0] + TB[7:0];
-						TALUout[16:8] = TA[15:8] + TB[15:8];
-						TALUH = TALUout[15:0];
+						R[Ri2][7:0] = TA[7:0] + TB[7:0];
+						R[Ri2][15:8] = TA[15:8] + TB[15:8];
 					 end
             end // ADD_IC
                 
             SUB_IC: begin
                 if (IR2[10] == 0) begin //non SIMD
-						TALUout = TA - TB;
-						TALUH = TALUout[15:0];
-					 end
+					R[Ri2] = TA - TB;
+				end
                 else begin // SIMD version
-						TALUout[8:0] = TA[7:0] - TB[7:0];
-						TALUout[16:8] = TA[15:8] - TB[15:8];
-						TALUH = TALUout[15:0];
-					 end
+					R[Ri2][7:0] = TA[7:0] - TB[7:0];
+					R[Ri2][15:8] = TA[15:8] - TB[15:8];
+				end
             end // SUB_IC
-				MUL_IC: begin
-					 if (IR2[10] == 0) begin //non SIMD
-						TALUH = MUL_out[31:16];
-						TALUL = MUL_out[15:0];
-					 end
+			MUL_IC: begin
+				if (IR2[10] == 0) begin //non SIMD
+					R[Ri2] = MUL_out[31:16];
+					R[Rj2] = MUL_out[15:0];
+				end
                 else begin // SIMD version
-						TALUH = {MUL_SIMD_out_1[15:8], MUL_SIMD_out_0[15:8]};
-						TALUL = {MUL_SIMD_out_1[7:0], MUL_SIMD_out_0[7:0]};
-					 end
-				end // MUL_IC
-				DIV_IC: begin
-					 if (IR2[10] == 0) begin //non SIMD
-						TALUH = DIV_q[15:0];
-						TALUL = DIV_rem[15:0];
-					 end
+					R[Ri2] = {MUL_SIMD_out_1[15:8], MUL_SIMD_out_0[15:8]};
+					R[Rj2] = {MUL_SIMD_out_1[7:0], MUL_SIMD_out_0[7:0]};
+				end
+			end // MUL_IC
+			DIV_IC: begin
+				if (IR2[10] == 0) begin //non SIMD
+					R[Ri2] = DIV_q[15:0];
+					R[Rj2] = DIV_rem[15:0];
+				end
                 else begin // SIMD version
-						TALUH = {DIV_SIMD_q_1[7:0], DIV_SIMD_q_0[7:0]};
-						TALUL = {DIV_SIMD_rem_1[7:0], DIV_SIMD_rem_0[7:0]};
-					 end
-				end // DIV_IC
+					R[Ri2] = {DIV_SIMD_q_1[7:0], DIV_SIMD_q_0[7:0]};
+					R[Rj2] = {DIV_SIMD_rem_1[7:0], DIV_SIMD_rem_0[7:0]};
+				end
+			end // DIV_IC
             AND_IC: begin
                 if (IR2[10] == 0) begin //non SIMD
-						TALUout = TA & TB;
-						TALUH = TALUout[15:0];
-					 end
+					R[Ri2] = TA & TB;
+				end
                 else begin // SIMD version
-						TALUout[8:0] = TA[7:0] & TB[7:0];
-						TALUout[15:8] = TA[15:8] & TB[15:8];
-						TALUH = TALUout[15:0];
-					 end
+					R[Ri2][7:0] = TA[7:0] & TB[7:0];
+					R[Ri2][15:8] = TA[15:8] & TB[15:8];
+				end
             end // AND_IC
             OR_IC: begin
                 if (IR2[10] == 0) begin //non SIMD
-						TALUout = TA | TB;
-						TALUH = TALUout[15:0];
-					 end
+					R[Ri2] = TA | TB;
+				end
                 else begin // SIMD version
-						TALUout[8:0] = TA[7:0] | TB[7:0];
-						TALUout[15:8] = TA[15:8] | TB[15:8];
-						TALUH = TALUout[15:0];
-					 end
+					R[Ri2][7:0] = TA[7:0] | TB[7:0];
+					R[Ri2][15:8] = TA[15:8] | TB[15:8];
+				end
             end // OR_IC
 				XOR_IC: begin
                 if (IR2[10] == 0) begin //non SIMD
-						TALUout = TA ^ TB;
-						TALUH = TALUout[15:0];
-					 end
+					R[Ri2] = TA ^ TB;
+				end
                 else begin // SIMD version
-						TALUout[8:0] = TA[7:0] ^ TB[7:0];
-						TALUout[15:8] = TA[15:8] ^ TB[15:8];
-						TALUH = TALUout[15:0];
-					 end
+					R[Ri2][7:0] = TA[7:0] ^ TB[7:0];
+					R[Ri2][15:8] = TA[15:8] ^ TB[15:8];
+				end
             end // XOR_IC
             SLL_IC: begin
-					 if (IR2[10] == 0) begin //non SIMD
-						TALUout = TA << Rj2;
-						TALUH = TALUout[15:0];
-					 end
+				if (IR2[10] == 0) begin //non SIMD
+					R[Ri2] = TA << Rj2;
+				end
                 else begin // SIMD version
-						TALUout[8:0] = TA[7:0] << Rj2;
-						TALUout[15:8] = TA[15:8] << Rj2;
-						TALUH = TALUout[15:0];
-					 end
+					R[Ri2][7:0] = TA[7:0] << Rj2;
+					R[Ri2][15:8] = TA[15:8] << Rj2;
+				end
             end // SLL_IC
-				SRL_IC: begin
-					 if (IR2[10] == 0) begin //non SIMD
-						TALUout = TA >> Rj2;
-						TALUH = TALUout[15:0];
+			SRL_IC: begin
+				if (IR2[10] == 0) begin //non SIMD
+					R[Ri2] = TA >> Rj2;
 					 end
                 else begin // SIMD version
-						TALUout[8:0] = TA[7:0] >> Rj2;
-						TALUout[15:8] = TA[15:8] >> Rj2;
-						TALUH = TALUout[15:0];
-					 end
+					R[Ri2][7:0] = TA[7:0] >> Rj2;
+					R[Ri2][15:8] = TA[15:8] >> Rj2;
+				end
             end // SRL_IC
-				EXT_IC: begin
-					lane_done_o = 1;// reached exit, lane is done with thread block
-				end // EXT_IC
+			EXT_IC: begin
+				lane_done_o = 1;// reached exit, lane is done with thread block
+			end // EXT_IC
 				
 				
             default: begin // Default case should not be reached
@@ -364,6 +296,16 @@ if (lane_freeze_i == 0) begin
 
         case (IR1[15:12]) // Decode the OpCode of the IW
 			BR_IC: begin
+				case (IR1[11:10])
+				BR_U : begin predicate_o = 1'b1; end
+				BR_EQ: begin if (R[Ri1] == R[Rj1]) begin predicate_o = 1'b1; branch_depth = branch_depth_i; end // branch
+								else begin predicate_o = 1'b0; branch_depth = branch_depth_i - 4'd1; end end	// don't branch
+				BR_GT: begin if (R[Ri1] > R[Rj1]) begin predicate_o = 1'b1; branch_depth = branch_depth_i; end // branch
+								else begin predicate_o = 1'b0; branch_depth = branch_depth_i - 4'd1; end end	// don't branch
+				BR_LT: begin if (R[Ri1] < R[Rj1]) begin predicate_o = 1'b1; branch_depth = branch_depth_i; end // branch
+								else begin predicate_o = 1'b0; branch_depth = branch_depth_i - 4'd1; end end	// don't branch
+				default: predicate_o = 1'b1;
+				endcase
 				lane_done_o = 0;
 				
             end // BR_IC
@@ -372,104 +314,59 @@ if (lane_freeze_i == 0) begin
                 if (Ri1 == 0) begin
                     MAX = 0; 
                 end
-					 else if (Ri1 == 1) begin
+					else if (Ri1 == 1) begin
                     MAX = PC_i; // Load MAX with PC; the value 1 emulates the PC-relative AM
                 end
-                else if ((Ri1 == Ri2) && (IR2[15:12] != 4'b1111) && (IR2[15:12] != BR_IC) && (IR2[15:12] != BAR_IC) && (IR2[15:12] != EXT_IC)) begin
-                    MAX = TALUH[15:0]; // <-- DF-FU = Data Forwarding from the instruction in MC2
-                end
-					 else if ((Ri1 == Rj2) && ((IR2[15:12] == MUL_IC) || (IR2[15:12] == DIV_IC))) begin
-						  MAX = TALUL[15:0];
-					 end
                 else begin
                     MAX = R[Ri1][15:0];
                 end
-					 MAeff = MAB + MAX;
-					 MA_o = MAeff;
-					 mem_type_o = IR1[10];
+				MAeff = MAB + MAX;
+				MA_o = MAeff;
+				mem_type_o = IR1[10];
                 WR_o = 1'b0; // For LD_IC we ensure here that WR_MM=0.
-					 mem_access_o = 1'b1;
-					 lane_done_o = 0;
+				mem_access_o = 1'b1;
+				lane_done_o = 0;
             end // LD_IC
 			ST_IC: begin
 				MAB = IW_i[15:0]; // Load MAB with base address constant value embedded in IW-field; the value 0 emulates the Register Direct AM
                 if (Ri1 == 0) begin
                     MAX = 0; 
                 end
-					 else if (Ri1 == 1) begin
+				else if (Ri1 == 1) begin
                     MAX = PC_i; // Load MAX with PC; the value 1 emulates the PC-relative AM
                 end
-
-                else if ((Ri1 == Ri2) && (IR2[15:12] != 4'b1111) && (IR2[15:12] != BR_IC) && (IR2[15:12] != BAR_IC) && (IR2[15:12] != EXT_IC))begin
-                    MAX = TALUH[15:0]; // <-- DF-FU = Data Forwarding from the instruction in MC2
-                end
-					 else if ((Ri1 == Rj2) && ((IR2[15:12] == MUL_IC) || (IR2[15:12] == DIV_IC))) begin
-						  MAX = TALUL[15:0];
-					 end
                 else begin
                     MAX = R[Ri1][15:0];
                 end
 					 
-					 MAeff = MAB + MAX;
-					 if (MAeff != 16'hffff) begin
-                    WR_o = 1'b1;
-						  end
-						  else begin
-                    WR_o = 1'b0;
-						  end
-		
-					 if ((Rj1 == Ri2) && (IR2[15:12] != 4'b1111) && (IR2[15:12] != BR_IC) && (IR2[15:12] != BAR_IC) && (IR2[15:12] != EXT_IC))begin
-					 MM_in_o = TALUH;
-					 end
-					 else if ((Rj1 == Rj2) && ((IR2[15:12] == MUL_IC) || (IR2[15:12] == DIV_IC))) begin
-					 MM_in_o = TALUL;
-					 end
-					 else begin
-					 MM_in_o = R[Rj1];
-					 end
-					 MA_o = MAeff;
-					 mem_type_o = IR1[10];
-					 mem_access_o = 1'b1;
-					 lane_done_o = 0;
+				MAeff = MAB + MAX;
+				if (MAeff != 16'hffff) begin
+					WR_o = 1'b1;
+				end
+				else begin
+					WR_o = 1'b0;
+				end
+
+				MM_in_o = R[Rj1];
+				MA_o = MAeff;
+				mem_type_o = IR1[10];
+				mem_access_o = 1'b1;
+				lane_done_o = 0;
             end // ST_IC
 
             SLL_IC, SRL_IC: begin
-               if ((Ri1 == Ri2) && (IR2[15:12] != 4'b1111) && (IR2[15:12] != BR_IC) && (IR2[15:12] != BAR_IC) && (IR2[15:12] != EXT_IC))begin
-						TA = TALUH;
-					end
-					else if ((Ri1 == Rj2) && ((IR2[15:12] == MUL_IC) || (IR2[15:12] == DIV_IC))) begin
-						TA = TALUL;
-					end
-					else begin
-						TA = R[Ri1];
-					end
-					lane_done_o = 0;
+				TA = R[Ri1];
+				lane_done_o = 0;
             end // SLL_IC, SRL_IC
            
             ADD_IC, SUB_IC, AND_IC, OR_IC, MUL_IC, DIV_IC, XOR_IC: begin
-               if ((Ri1 == Ri2) && (IR2[15:12] != 4'b1111) && (IR2[15:12] != BR_IC) && (IR2[15:12] != BAR_IC) && (IR2[15:12] != EXT_IC)) begin
-						TA = TALUH;
-					end
-					else if ((Ri1 == Rj2) && ((IR2[15:12] == MUL_IC) || (IR2[15:12] == DIV_IC))) begin
-						TA = TALUL;
-					end
-					else begin
-						TA = R[Ri1];
-					end
-               if ((Rj1 == Ri2) && (IR2[15:12] != 4'b1111) && (IR2[15:12] != BR_IC) && (IR2[15:12] != BAR_IC) && (IR2[15:12] != EXT_IC))begin
-						TB = TALUH;
-					end
-					else if ((Rj1 == Rj2) && ((IR2[15:12] == MUL_IC) || (IR2[15:12] == DIV_IC))) begin
-						TB = TALUL;
-					end
-					else begin
-						TB = R[Rj1];
-					end
-					lane_done_o = 0;
+				TA = R[Ri1];
+				TB = R[Rj1];
+				lane_done_o = 0;
             end // SWAP_IC, ADD_IC, SUB_IC, AND_IC, OR_IC
-				EXT_IC: begin
-					lane_done_o = 0;// reached exit, lane is done with thread block
-				end // EXT_IC
+			EXT_IC: begin
+				lane_done_o = 0;// reached exit, lane is done with thread block
+			end // EXT_IC
             default: begin // Default case should not be reached
                 `ifdef SIMULATION
                 $display("ERROR: Default Case Selection Reached from MC1 , OPCODE: %b @ %t",IR1[15:12], $time());
@@ -486,26 +383,12 @@ if (lane_freeze_i == 0) begin
     // The IR value 0xffff I call a "don't care" OpCode value.  
     // It allows us to control the refill of the pipe after the stalls of a jump emptied it.
     // Instruction in MC2 can move to MC3; 
-    IR3 = IR2;
-    Ri3 = Ri2;
-    Rj3 = Rj2;
 
     // Instruction in MC1 can move to MC2; Rj2 may need to be = Ri1 for certain instruction sequences
-	if((stall_mc1 == 0) && (IR2[15:12] != BR_IC)) begin
-		IR2 = IR1;
-		Ri2 = Ri1;
-		Rj2 = Rj1;
-		stall_mc2 = 0; 
-	end
-	else begin
-		IR2 = 16'hffff; 
-		stall_mc1 = 1; 
-	end
+	IR2 = IR1;
+	Ri2 = Ri1;
+	Rj2 = Rj1;
 	
-	 
-
-
-
     // Instruction in MC0 can move to MC1;     
     if ((stall_mc0 == 0) && (IR1[15:12] != LD_IC) && (IR1[15:12] != ST_IC) && (IR1[15:12] != BR_IC)) begin
         // Below: IW0 is fetched directly into IR1, Ri1, and Rj1
@@ -522,7 +405,7 @@ if (lane_freeze_i == 0) begin
     // After the JMP_IC instruction reaches MC3 OR (LD_IC or ST_C) reach MC1,
     // start refilling the pipe by removing the stalls. For JMP_IC the stalls are 
     // removed in this order: stall_mc0 --> stall_mc1 --> stall_mc2
-    if ((IR3 == 16'hffff) || (IR3[15:12] == BR_IC) || (IR2[15:12] == LD_IC) || (IR2[15:12] == ST_IC) || (IR2[15:12] == BR_IC)) begin
+    if ((IR2[15:12] == LD_IC) || (IR2[15:12] == ST_IC) || (IR2[15:12] == BR_IC)) begin
         stall_mc0 = 0; 
     end
 	R[30] = {7'd0, thread_block_idx_i};
